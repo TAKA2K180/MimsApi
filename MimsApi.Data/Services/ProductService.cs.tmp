@@ -1,0 +1,552 @@
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using MimsApi.Core.models;
+using MimsApi.Data.Context;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.Common;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace MimsApi.Data.Services
+{
+    /// <summary>
+    /// Unified service for products and packaging using ONLY stored procedures and views
+    /// Full database-first approach with zero ORM usage
+    /// </summary>
+    public class ProductService
+    {
+        private readonly MimsDbContext _dbContext;
+        private readonly ILogger<ProductService> _logger;
+
+        public ProductService(MimsDbContext dbContext, ILogger<ProductService> logger)
+        {
+            _dbContext = dbContext;
+            _logger = logger;
+        }
+
+        private DbConnection CreateConnection()
+        {
+            var connection = _dbContext.Database.GetDbConnection();
+
+            if (string.IsNullOrWhiteSpace(connection.ConnectionString))
+            {
+                throw new InvalidOperationException("Database connection string has not been initialized.");
+            }
+
+            return connection;
+        }
+
+        #region Product CRUD Operations (using Stored Procedures)
+
+        public async Task<IEnumerable<Products>> GetAllProductsAsync()
+        {
+            try
+            {
+                _logger.LogInformation("Fetching all products");
+                var products = new List<Products>();
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_GetAllProducts";
+                command.CommandType = CommandType.StoredProcedure;
+
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    products.Add(new Products
+                    {
+                        Id = reader.GetInt32(0),
+                        ProductName = reader.GetString(1)
+                    });
+                }
+
+                _logger.LogInformation("Retrieved {ProductCount} products", products.Count);
+                return products;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving all products");
+                throw new InvalidOperationException("Error retrieving products: " + ex.Message, ex);
+            }
+        }
+
+        public async Task<(IEnumerable<Products> items, int total)> GetAllProductsPagedAsync(int pageNumber, int pageSize)
+        {
+            try
+            {
+                if (pageNumber < 1) pageNumber = 1;
+                if (pageSize < 1) pageSize = 10;
+
+                _logger.LogInformation("Fetching paginated products - Page: {PageNumber}, PageSize: {PageSize}", pageNumber, pageSize);
+
+                var products = new List<Products>();
+                int total;
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_GetProductsPaged";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@PageNumber", pageNumber));
+                command.Parameters.Add(new SqlParameter("@PageSize", pageSize));
+
+                var totalParam = new SqlParameter("@TotalCount", SqlDbType.Int)
+                {
+                    Direction = ParameterDirection.Output
+                };
+                command.Parameters.Add(totalParam);
+
+                using (var reader = await command.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        products.Add(new Products
+                        {
+                            Id = reader.GetInt32(0),
+                            ProductName = reader.GetString(1)
+                        });
+                    }
+                }
+
+                total = totalParam.Value == DBNull.Value ? 0 : (int)totalParam.Value;
+
+                _logger.LogInformation("Retrieved {ItemCount} products from total {TotalCount}", products.Count, total);
+                return (products, total);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving paged products");
+                throw new InvalidOperationException($"Error retrieving paged products: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<Products> GetProductByIdAsync(int id)
+        {
+            try
+            {
+                _logger.LogInformation("Fetching product by ID: {ProductId}", id);
+                Products product = null;
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_GetProductById";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@ProductId", id));
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    product = new Products
+                    {
+                        Id = reader.GetInt32(0),
+                        ProductName = reader.GetString(1)
+                    };
+                }
+
+                if (product != null)
+                    _logger.LogInformation("Product found: {ProductId} - {ProductName}", id, product.ProductName);
+                else
+                    _logger.LogWarning("Product not found with ID: {ProductId}", id);
+
+                return product;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving product with ID {ProductId}", id);
+                throw new InvalidOperationException($"Error retrieving product with ID {id}: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<Products> CreateProductAsync(Products product)
+        {
+            try
+            {
+                ArgumentNullException.ThrowIfNull(product);
+
+                if (string.IsNullOrWhiteSpace(product.ProductName))
+                    throw new ArgumentException("Product name is required", nameof(product));
+
+                _logger.LogInformation("Creating new product: {ProductName}", product.ProductName);
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_CreateProduct";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@ProductName", product.ProductName.Trim()));
+
+                var productIdParam = new SqlParameter("@ProductId", SqlDbType.Int)
+                {
+                    Direction = ParameterDirection.Output
+                };
+                command.Parameters.Add(productIdParam);
+
+                await command.ExecuteNonQueryAsync();
+                product.Id = productIdParam.Value == DBNull.Value ? 0 : (int)productIdParam.Value;
+
+                _logger.LogInformation("Product created successfully: {ProductId} - {ProductName}", product.Id, product.ProductName);
+                return product;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating product: {ProductName}", product?.ProductName);
+                throw new InvalidOperationException("Error creating product: " + ex.Message, ex);
+            }
+        }
+
+        public async Task<Products> UpdateProductAsync(int id, Products product)
+        {
+            try
+            {
+                ArgumentNullException.ThrowIfNull(product);
+
+                if (string.IsNullOrWhiteSpace(product.ProductName))
+                    throw new ArgumentException("Product name is required", nameof(product));
+
+                _logger.LogInformation("Updating product: {ProductId} to {ProductName}", id, product.ProductName);
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_UpdateProduct";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@ProductId", id));
+                command.Parameters.Add(new SqlParameter("@ProductName", product.ProductName.Trim()));
+
+                await command.ExecuteNonQueryAsync();
+
+                product.Id = id;
+                _logger.LogInformation("Product updated successfully: {ProductId} - {ProductName}", id, product.ProductName);
+                return product;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating product with ID {ProductId}", id);
+                throw new InvalidOperationException($"Error updating product with ID {id}: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<bool> DeleteProductAsync(int id)
+        {
+            try
+            {
+                _logger.LogInformation("Deleting product: {ProductId}", id);
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_DeleteProduct";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@ProductId", id));
+
+                var rowsAffected = await command.ExecuteNonQueryAsync();
+
+                if (rowsAffected > 0)
+                {
+                    _logger.LogInformation("Product deleted successfully: {ProductId}", id);
+                    return true;
+                }
+
+                _logger.LogWarning("Product not found for deletion: {ProductId}", id);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting product with ID {ProductId}", id);
+                throw new InvalidOperationException($"Error deleting product with ID {id}: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<bool> ProductExistsAsync(int id)
+        {
+            try
+            {
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_ProductExists";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@ProductId", id));
+
+                var result = await command.ExecuteScalarAsync();
+                return result != null && result != DBNull.Value && Convert.ToInt32(result) > 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking if product exists: {ProductId}", id);
+                throw new InvalidOperationException($"Error checking if product exists: {ex.Message}", ex);
+            }
+        }
+
+        #endregion
+
+        #region Packaging Hierarchy Operations (using optimized Stored Procedures)
+
+        public async Task<ProductHierarchyData> GetProductWithPackagingHierarchyAsync(int productId)
+        {
+            try
+            {
+                _logger.LogInformation("Fetching product with packaging hierarchy: {ProductId}", productId);
+
+                var result = new ProductHierarchyData();
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_GetProductWithPackagingHierarchy";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@ProductId", productId));
+
+                using var reader = await command.ExecuteReaderAsync();
+
+                if (await reader.ReadAsync())
+                {
+                    result.ProductId = reader.GetInt32(0);
+                    result.ProductName = reader.GetString(1);
+                }
+
+                if (await reader.NextResultAsync())
+                {
+                    var packagingDict = new Dictionary<int, PackagingNode>();
+                    var rootPackagings = new List<PackagingNode>();
+
+                    while (await reader.ReadAsync())
+                    {
+                        var packagingId = reader.GetInt32(0);
+                        var parentId = reader.IsDBNull(3) ? (int?)null : reader.GetInt32(3);
+                        var node = new PackagingNode
+                        {
+                            Id = packagingId,
+                            PackagingName = reader.GetString(1),
+                            PackagingType = reader.GetString(2),
+                            ParentPackagingId = parentId,
+                            NestingLevel = reader.GetInt32(4),
+                            Children = new List<PackagingNode>()
+                        };
+
+                        packagingDict[packagingId] = node;
+
+                        if (parentId == null)
+                        {
+                            rootPackagings.Add(node);
+                        }
+                    }
+
+                    foreach (var packaging in packagingDict.Values.Where(p => p.ParentPackagingId.HasValue))
+                    {
+                        if (packagingDict.TryGetValue(packaging.ParentPackagingId!.Value, out var parent))
+                        {
+                            parent.Children.Add(packaging);
+                        }
+                    }
+
+                    result.RootPackagings = rootPackagings;
+                }
+
+                if (await reader.NextResultAsync())
+                {
+                    var detailsDict = new Dictionary<int, List<PackagingItemData>>();
+
+                    while (await reader.ReadAsync())
+                    {
+                        var packagingHeaderId = reader.GetInt32(1);
+                        var itemData = new PackagingItemData
+                        {
+                            ItemId = reader.GetInt32(2),
+                            ItemName = reader.GetString(3),
+                            Quantity = reader.GetInt32(4)
+                        };
+
+                        if (!detailsDict.ContainsKey(packagingHeaderId))
+                        {
+                            detailsDict[packagingHeaderId] = new List<PackagingItemData>();
+                        }
+
+                        detailsDict[packagingHeaderId].Add(itemData);
+                    }
+
+                    result.PackagingItems = detailsDict;
+                }
+
+                _logger.LogInformation("Successfully retrieved product with packaging hierarchy: {ProductId}", productId);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving product with packaging hierarchy: {ProductId}", productId);
+                throw new InvalidOperationException($"Error retrieving product with packaging hierarchy for product ID {productId}: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<IEnumerable<PackagingWithItemData>> GetPackagingContainingItemAsync(int itemId, int? productId = null)
+        {
+            try
+            {
+                _logger.LogInformation("Fetching packaging containing item: {ItemId}", itemId);
+
+                var result = new List<PackagingWithItemData>();
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_GetPackagingContainingItem";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@ItemId", itemId));
+                command.Parameters.Add(new SqlParameter("@ProductId", productId ?? (object)DBNull.Value));
+
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    result.Add(new PackagingWithItemData
+                    {
+                        PackagingId = reader.GetInt32(0),
+                        PackagingName = reader.GetString(1),
+                        PackagingType = reader.GetString(2),
+                        ProductId = reader.GetInt32(3),
+                        ProductName = reader.GetString(4),
+                        ParentPackagingId = reader.IsDBNull(5) ? (int?)null : reader.GetInt32(5),
+                        NestingLevel = reader.IsDBNull(6) ? 0 : reader.GetInt32(6),
+                        Quantity = reader.GetInt32(7)
+                    });
+                }
+
+                _logger.LogInformation("Found {PackagingCount} packaging(s) containing item {ItemId}", result.Count, itemId);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving packaging containing item: {ItemId}", itemId);
+                throw new InvalidOperationException($"Error retrieving packaging containing item ID {itemId}: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<IEnumerable<PackagingDetailData>> GetAllItemsInPackagingAsync(int packagingId)
+        {
+            try
+            {
+                _logger.LogInformation("Fetching all items in packaging: {PackagingId}", packagingId);
+
+                var result = new List<PackagingDetailData>();
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_GetAllItemsInPackaging";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@PackagingId", packagingId));
+
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    result.Add(new PackagingDetailData
+                    {
+                        PackagingDetailId = reader.GetInt32(0),
+                        PackagingHeaderId = reader.GetInt32(1),
+                        ItemId = reader.GetInt32(2),
+                        ItemName = reader.GetString(3),
+                        Quantity = reader.GetInt32(4)
+                    });
+                }
+
+                _logger.LogInformation("Retrieved {ItemCount} total items in packaging: {PackagingId}", result.Count, packagingId);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving all items in packaging: {PackagingId}", packagingId);
+                throw new InvalidOperationException($"Error retrieving all items in packaging ID {packagingId}: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<bool> ValidatePackagingHierarchyAsync(int parentPackagingId, int childPackagingId)
+        {
+            try
+            {
+                _logger.LogInformation("Validating packaging hierarchy: Parent {ParentId}, Child {ChildId}", parentPackagingId, childPackagingId);
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_ValidatePackagingHierarchy";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@ParentPackagingId", parentPackagingId));
+                command.Parameters.Add(new SqlParameter("@ChildPackagingId", childPackagingId));
+
+                var isValidParam = new SqlParameter("@IsValid", SqlDbType.Bit)
+                {
+                    Direction = ParameterDirection.Output
+                };
+                command.Parameters.Add(isValidParam);
+
+                await command.ExecuteNonQueryAsync();
+                var isValid = isValidParam.Value != DBNull.Value && Convert.ToBoolean(isValidParam.Value);
+
+                _logger.LogInformation("Packaging hierarchy validation result: {IsValid}", isValid);
+                return isValid;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating packaging hierarchy");
+                throw new InvalidOperationException($"Error validating packaging hierarchy: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<PackagingStatisticsData> GetPackagingStatisticsAsync(int productId)
+        {
+            try
+            {
+                _logger.LogInformation("Retrieving packaging statistics for product: {ProductId}", productId);
+
+                await using var connection = CreateConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "sp_GetPackagingStatistics";
+                command.CommandType = CommandType.StoredProcedure;
+                command.Parameters.Add(new SqlParameter("@ProductId", productId));
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var stats = new PackagingStatisticsData
+                    {
+                        ProductId = reader.GetInt32(0),
+                        TotalPackagings = reader.GetInt32(1),
+                        RootPackagings = reader.GetInt32(2),
+                        MaxNestingLevel = reader.GetInt32(3),
+                        UniqueItems = reader.GetInt32(4),
+                        TotalItemQuantity = reader.GetInt32(5)
+                    };
+
+                    _logger.LogInformation("Retrieved packaging statistics - Total: {Total}, MaxLevel: {MaxLevel}", stats.TotalPackagings, stats.MaxNestingLevel);
+                    return stats;
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving packaging statistics for product: {ProductId}", productId);
+                throw new InvalidOperationException($"Error retrieving packaging statistics for product {productId}: {ex.Message}", ex);
+            }
+        }
+
+        #endregion
+    }
+}

@@ -1,0 +1,6 @@
+@MimsApi.Main_HostAddress = http://localhost:5138
+
+GET {{MimsApi.Main_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
