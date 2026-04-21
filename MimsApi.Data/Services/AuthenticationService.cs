@@ -19,9 +19,6 @@ namespace MimsApi.Data.Services
         private readonly MimsDbContext _dbContext;
         private readonly ITokenService _tokenService;
         private readonly ILogger<AuthenticationService> _logger;
-        private const int SaltSize = 16;
-        private const int HashSize = 20;
-        private const int Iterations = 10000;
 
         public AuthenticationService(MimsDbContext dbContext, ITokenService tokenService, ILogger<AuthenticationService> logger)
         {

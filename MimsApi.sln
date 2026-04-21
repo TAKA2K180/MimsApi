@@ -1,22 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36414.22 d17.14
+VisualStudioVersion = 17.14.36414.22
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MimsApi.Main", "MimsApi.Main\MimsApi.Main.csproj", "{8F9258CA-7BE7-475A-8816-FC0C41C4DCB9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MimsApi.Core", "MimsApi.Core\MimsApi.Core.csproj", "{A785BED3-9AC1-4F2C-86A5-07FB90E96454}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MimsApi.Data", "MimsApi.Data\MimsApi.Data.csproj", "{16DACA54-9E1D-4BD5-A9E4-09E88415C0DA}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SQL Scripts", "SQL Scripts", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
-	ProjectSection(SolutionItems) = preProject
-		Create_StoredProcedures.sql = Create_StoredProcedures.sql
-		Create_Table.sql = Create_Table.sql
-		Create_Views.sql = Create_Views.sql
-		IndexOptimization.sql = IndexOptimization.sql
-		Insert_Product.sql = Insert_Product.sql
-	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

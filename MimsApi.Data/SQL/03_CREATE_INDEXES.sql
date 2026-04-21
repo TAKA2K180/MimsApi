@@ -1,5 +1,5 @@
 -- ============================================================================
--- DATABASE-FIRST APPROACH: INDEX OPTIMIZATION FOR PERFORMANCE
+-- INDEX OPTIMIZATION FOR PERFORMANCE
 -- ============================================================================
 -- These indexes optimize all stored procedure queries
 -- ============================================================================

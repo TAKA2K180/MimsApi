@@ -13,7 +13,6 @@ namespace MimsApi.Data.Services
 {
     /// <summary>
     /// Service for accessing packaging hierarchy using stored procedures and views
-    /// Provides efficient queries for hierarchical packaging structure
     /// </summary>
     public class PackagingService
     {

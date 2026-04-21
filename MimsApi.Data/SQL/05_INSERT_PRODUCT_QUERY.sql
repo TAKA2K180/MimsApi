@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- INSERT QUERY: Self Adjusting Table with Hierarchical Packaging
 -- ============================================================================
 -- This script inserts sample data for the "Self adjusting table" product
@@ -145,17 +145,17 @@ EXEC sp_GetPackagingStatistics @ProductId = @ProductId;
 STRUCTURE CREATED:
 
 Master Box (Root - Nesting Level 0)
-    ├─ Table Top Box (Nesting Level 1)
-    │   └─ Table top (1x)
-    │
-    ├─ Table Legs Box (Nesting Level 1)
-    │   └─ Table legs (1x)
-    │
-    └─ Tools Packet (Nesting Level 1)
-        ├─ Screwdriver (1x)
-        │
-        └─ Screws Packet (Nesting Level 2)
-            └─ Screws (100x)
+    +- Table Top Box (Nesting Level 1)
+    �   +- Table top (1x)
+    �
+    +- Table Legs Box (Nesting Level 1)
+    �   +- Table legs (1x)
+    �
+    +- Tools Packet (Nesting Level 1)
+        +- Screwdriver (1x)
+        �
+        +- Screws Packet (Nesting Level 2)
+            +- Screws (100x)
 
 TOTAL STRUCTURE:
 - Total Packaging: 5
