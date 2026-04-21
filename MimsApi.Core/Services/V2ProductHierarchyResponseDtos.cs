@@ -7,11 +7,6 @@ namespace MimsApi.Core.services
     /// V2 API Response DTOs for enhanced product hierarchy operations
     /// These DTOs are used to structure responses for the enhanced V2 API endpoints
     /// </summary>
-
-    /// <summary>
-    /// V2 Response: Product with complete packaging hierarchy
-    /// Used by GET /api/v2/products and GET /api/v2/products/{id}
-    /// </summary>
     public class V2ProductWithHierarchyDto
     {
         /// <summary>

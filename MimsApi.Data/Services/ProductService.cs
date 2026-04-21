@@ -14,7 +14,6 @@ namespace MimsApi.Data.Services
 {
     /// <summary>
     /// Unified service for products and packaging using ONLY stored procedures and views
-    /// Full database-first approach with zero ORM usage
     /// </summary>
     public class ProductService
     {
